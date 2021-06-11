@@ -1,6 +1,9 @@
 package com.apurebase.deferredJson
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineStart.LAZY
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlin.coroutines.CoroutineContext
@@ -8,36 +11,36 @@ import kotlin.coroutines.CoroutineContext
 
 class DeferredJsonArray internal constructor(
     ctx: CoroutineContext
-): CoroutineScope {
+): CoroutineScope, Mutex by Mutex() {
 
     private val job = SupervisorJob()
-    override val coroutineContext = ctx + job
+    override val coroutineContext = (ctx + job)
 
     private val deferredArray = mutableListOf<Deferred<JsonElement>>()
     private var completedArray: List<JsonElement>? = null
 
-    fun addValue(element: JsonElement) {
+    suspend fun addValue(element: JsonElement) {
         addDeferredValue(CompletableDeferred(element))
     }
 
-    fun addDeferredValue(element: Deferred<JsonElement>) {
+    suspend fun addDeferredValue(element: Deferred<JsonElement>) = withLock {
         deferredArray.add(element)
     }
 
     suspend fun addDeferredObj(block: suspend DeferredJsonMap.() -> Unit) {
-        val map = DeferredJsonMap(coroutineContext)
+        val map = DeferredJsonMap(job)
         block(map)
-        addDeferredValue(map.asDeferred())
+        addDeferredValue(async(job, LAZY) { map.awaitAndBuild() })
     }
 
     suspend fun addDeferredArray(block: suspend DeferredJsonArray.() -> Unit) {
-        val array = DeferredJsonArray(coroutineContext)
+        val array = DeferredJsonArray(job)
         block(array)
         addDeferredValue(array.asDeferred())
     }
 
     fun asDeferred() : Deferred<JsonElement> {
-        return async(coroutineContext, start = CoroutineStart.LAZY) {
+        return async(job, LAZY) {
             awaitAll()
             build()
         }

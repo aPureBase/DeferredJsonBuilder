@@ -1,31 +1,27 @@
 package com.apurebase.deferredJson
 
 import kotlinx.coroutines.*
-import kotlinx.coroutines.test.runBlockingTest
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.json
+import kotlinx.serialization.json.*
+import org.amshove.kluent.shouldBeEqualTo
 import org.amshove.kluent.shouldEqualUnordered
-import org.junit.jupiter.api.RepeatedTest
+import org.junit.jupiter.api.Disabled
+import org.junit.jupiter.api.Test
 
 class BuilderTest {
 
-    @RepeatedTest(100)
-    fun `basic test`() = runBlockingTest {
+    @Test
+    fun `basic test`() = runBlocking<Unit> {
         val def1 = CompletableDeferred<JsonElement>()
         val def2 = CompletableDeferred<JsonElement>()
         val def3 = CompletableDeferred<JsonElement>()
 
-        val deferredMap = async {
-            deferredJsonBuilder {
-                "hello" toDeferredValue def1
-                "extra" toDeferredObj {
-                    "v1" toDeferredValue def2
-                    "v2" toDeferredValue def3
-                }
+        val deferredMap = deferredJsonBuilder(2_500) {
+            "hello" toDeferredValue def1
+            "extra" toDeferredObj {
+                "v1" toDeferredValue def2
+                "v2" toDeferredValue def3
             }
         }
-
 
         launch {
             def1.complete(JsonPrimitive("world"))
@@ -35,14 +31,57 @@ class BuilderTest {
             }
         }
 
-        deferredMap.await() shouldEqualUnordered json {
-            "hello" to "world"
-            "extra" to json {
-                "v1" to "new world"
-                "v2" to ""
+        deferredMap.await() shouldBeEqualTo buildJsonObject {
+            put("hello", "world")
+            putJsonObject("extra") {
+                put("v1", "new world")
+                put("v2", "")
             }
         }
-        Unit
+    }
+
+
+    @Test
+    fun `basic deferred launches`() = runBlocking<Unit> {
+        var def1: CompletableDeferred<JsonElement>? = null
+        var def2: CompletableDeferred<JsonElement>? = null
+        var def3: CompletableDeferred<JsonElement>? = null
+
+        val deferredMap = deferredJsonBuilder {
+            def1 = CompletableDeferred()
+
+            "hello" toDeferredValue def1!!
+            launch {
+                delay(25)
+                def2 = CompletableDeferred()
+                "last" toDeferredValue def2!!
+
+
+                deferredLaunch {
+                    delay(750)
+                    def3 = CompletableDeferred()
+                    "onTheFly" toDeferredValue def3!!
+                }
+            }
+        }
+
+        launch {
+            def1!!.complete(JsonPrimitive("world"))
+            launch {
+                delay(75)
+                def2!!.complete(JsonPrimitive("takes long"))
+            }
+            while (def3 == null) {
+                delay(10)
+            }
+            def3!!.complete(JsonPrimitive("value"))
+        }
+
+        deferredMap.await() shouldEqualUnordered buildJsonObject {
+            put("hello", "world")
+            put("last", "takes long")
+            put("onTheFly", "value")
+        }
     }
 
 }
