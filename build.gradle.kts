@@ -1,4 +1,5 @@
 import de.marcphilipp.gradle.nexus.NexusPublishPlugin
+import org.jetbrains.dokka.Platform
 import java.time.Duration
 
 plugins {
@@ -24,6 +25,10 @@ val sonatypePassword: String? = System.getenv("sonatypePassword")
 
 group = "com.apurebase"
 version = libVersion
+
+kotlin {
+    explicitApi()
+}
 
 dependencies {
     implementation(kotlin("stdlib-common"))
@@ -55,7 +60,7 @@ tasks {
             configureEach {
                 jdkVersion.set(8)
                 reportUndocumented.set(true)
-                platform.set(org.jetbrains.dokka.Platform.jvm)
+                platform.set(Platform.jvm)
             }
         }
     }

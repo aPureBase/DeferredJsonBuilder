@@ -9,50 +9,51 @@ import kotlinx.serialization.json.JsonElement
 import kotlin.coroutines.CoroutineContext
 
 
-class DeferredJsonArray internal constructor(
+@Suppress("SuspendFunctionOnCoroutineScope")
+public class DeferredJsonArray internal constructor(
     ctx: CoroutineContext
 ): CoroutineScope, Mutex by Mutex() {
 
-    private val job = SupervisorJob()
-    override val coroutineContext = (ctx + job)
+    private val job = Job()
+    override val coroutineContext: CoroutineContext = ctx + job
 
     private val deferredArray = mutableListOf<Deferred<JsonElement>>()
     private var completedArray: List<JsonElement>? = null
 
-    suspend fun addValue(element: JsonElement) {
+    public suspend fun addValue(element: JsonElement) {
         addDeferredValue(CompletableDeferred(element))
     }
 
-    suspend fun addDeferredValue(element: Deferred<JsonElement>) = withLock {
+    public suspend fun addDeferredValue(element: Deferred<JsonElement>): Unit = withLock {
         deferredArray.add(element)
     }
 
-    suspend fun addDeferredObj(block: suspend DeferredJsonMap.() -> Unit) {
+    public suspend fun addDeferredObj(block: suspend DeferredJsonMap.() -> Unit) {
         val map = DeferredJsonMap(job)
         block(map)
         addDeferredValue(async(job, LAZY) { map.awaitAndBuild() })
     }
 
-    suspend fun addDeferredArray(block: suspend DeferredJsonArray.() -> Unit) {
+    public suspend fun addDeferredArray(block: suspend DeferredJsonArray.() -> Unit) {
         val array = DeferredJsonArray(job)
         block(array)
         addDeferredValue(array.asDeferred())
     }
 
-    fun asDeferred() : Deferred<JsonElement> {
+    internal fun asDeferred() : Deferred<JsonElement> {
         return async(job, LAZY) {
             awaitAll()
             build()
         }
     }
 
-    suspend fun awaitAll() {
+    public suspend fun awaitAll() {
         check(completedArray == null) { "The deferred tree has already been awaited!" }
         completedArray = deferredArray.awaitAll()
         job.complete()
     }
 
-    fun build(): JsonArray {
+    public fun build(): JsonArray {
         checkNotNull(completedArray) { "The deferred tree has not been awaited!" }
         return JsonArray(completedArray!!)
     }
