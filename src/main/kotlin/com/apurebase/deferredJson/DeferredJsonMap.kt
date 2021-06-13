@@ -64,7 +64,10 @@ class DeferredJsonMap internal constructor(
     }
 
     private suspend fun awaitAll() {
-        check(completedMap == null) { "The deferred tree has already been awaited!" }
+        if (completedMap != null) {
+            println("The deferred tree has already been awaited!")
+            return
+        }
 
         println("$job | map:awaitAll #1")
 
