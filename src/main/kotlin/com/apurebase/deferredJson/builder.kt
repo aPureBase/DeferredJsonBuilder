@@ -9,7 +9,8 @@ fun CoroutineScope.deferredJsonBuilder(
 ): Deferred<JsonObject> = async {
     val block: suspend CoroutineScope.() -> JsonObject = {
         try {
-            val builder = DeferredJsonMap(coroutineContext)
+            val builder = DeferredJsonMap(coroutineContext, true)
+            println("Root: ${builder.job}")
             builder.init()
             builder.awaitAndBuild()
         } catch (e: CancellationException) {

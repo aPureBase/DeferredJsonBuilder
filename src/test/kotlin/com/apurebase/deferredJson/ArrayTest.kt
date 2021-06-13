@@ -6,10 +6,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import org.amshove.kluent.shouldEqualUnordered
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 
-@Disabled("Basic builder tests need to work first")
 class ArrayTest {
 
     @Test

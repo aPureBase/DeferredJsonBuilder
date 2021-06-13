@@ -6,14 +6,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.coroutines.CoroutineContext
 
+val all = mutableListOf<DeferredJsonMap>()
+
 class DeferredJsonMap internal constructor(
-    val ctx: CoroutineContext
+    val ctx: CoroutineContext,
+    val isRoot: Boolean = false
 ): CoroutineScope {
 
-    private val job = Job()
-    override val coroutineContext = (ctx + job)
+    internal val job = Job()
+    override val coroutineContext = ctx + job + CoroutineName("isRoot: $isRoot")
 
     private val dmLock = Mutex()
     private val deferredMap = mutableMapOf<String, Deferred<JsonElement>>()
@@ -24,11 +28,15 @@ class DeferredJsonMap internal constructor(
 
     private var completedMap: Map<String, JsonElement>? = null
 
+    init {
+        all.add(this)
+    }
+
     suspend infix fun String.toValue(element: JsonElement) {
         this toDeferredValue CompletableDeferred(element)
     }
 
-    suspend infix fun String.toDeferredValue(element: Deferred<JsonElement>) = dmLock.withLock {
+    infix fun String.toDeferredValue(element: Deferred<JsonElement>) {
         deferredMap[this] = element
     }
 
@@ -50,13 +58,9 @@ class DeferredJsonMap internal constructor(
         this@toDeferredArray toDeferredValue array.asDeferred()
     }
 
-    private fun asDeferred() : Deferred<JsonElement> = async(job + CoroutineName("$ctx - create as deferred"), LAZY) {
-        println("$job | map:asDeferred #1")
+    private fun asDeferredAsync(startIn: Job = job) : Deferred<JsonElement> = async(startIn + CoroutineName("$ctx - create as deferred"), LAZY) {
         awaitAll()
-        println("$job | map:asDeferred #2")
-        val res = build()
-        println("$job | map:asDeferred #3")
-        res
+        build()
     }
 
     private suspend fun awaitAll() {
@@ -64,39 +68,31 @@ class DeferredJsonMap internal constructor(
 
         println("$job | map:awaitAll #1")
 
+
         do {
             println("$job | map:awaitAll #do")
-            unDefinedDeferredMap.map { (key, map) ->
-                deferredLaunch {
-                    key toDeferredValue map.asDeferred()
-                }
-            }
             moreJobs.awaitAll()
+            unDefinedDeferredMap.map { (key, map) ->
+                key toDeferredValue map.asDeferredAsync(job)
+            }
          } while (moreJobs.any { !it.isCompleted })
 
         println("$job | map:awaitAll #2")
-        job.complete()
+        job.children.toList().joinAll()
         println("$job | map:awaitAll #3")
-        GlobalScope.launch {
-            while (this@DeferredJsonMap.job.isActive) {
-                println("  -> $job | mj   : ${moreJobs.filter { it.isCompleted }.size} / ${moreJobs.size}")
-                println("  -> $job | uddm : ${unDefinedDeferredMap.filter { it.value.isActive }.size} / ${unDefinedDeferredMap.size}")
-                delay(100)
-            }
-        }
-        job.join()
+        job.complete()
+
 
         println("$job | map:awaitAll #4")
+        job.join()
         completedMap = deferredMap.mapValues { it.value.await() }
     }
 
-    suspend fun deferredLaunch(block: suspend DeferredJsonMap.() -> Unit) = coroutineScope {
-        mjLock.withLock {
-            println("$job | ")
-            moreJobs.add(async(job + CoroutineName("$ctx deferredLaunch")) {
-                block(this@DeferredJsonMap)
-            })
-        }
+    suspend fun deferredLaunch(block: suspend DeferredJsonMap.() -> Unit) = mjLock.withLock {
+        println("$job | ")
+        moreJobs.add(async(job + CoroutineName("$ctx deferredLaunch"), LAZY) {
+            block(this@DeferredJsonMap)
+        })
     }
 
     private fun build(): JsonObject {

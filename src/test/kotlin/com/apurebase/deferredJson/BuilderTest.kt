@@ -4,7 +4,6 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.amshove.kluent.shouldBeEqualTo
 import org.amshove.kluent.shouldEqualUnordered
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 
 class BuilderTest {
@@ -15,7 +14,7 @@ class BuilderTest {
         val def2 = CompletableDeferred<JsonElement>()
         val def3 = CompletableDeferred<JsonElement>()
 
-        val deferredMap = deferredJsonBuilder(2_500) {
+        val deferredMap = deferredJsonBuilder(25_000) {
             "hello" toDeferredValue def1
             "extra" toDeferredObj {
                 "v1" toDeferredValue def2
@@ -47,21 +46,19 @@ class BuilderTest {
         var def2: CompletableDeferred<JsonElement>? = null
         var def3: CompletableDeferred<JsonElement>? = null
 
-        val deferredMap = deferredJsonBuilder {
+        val deferredMap = deferredJsonBuilder(15_000) {
             def1 = CompletableDeferred()
 
             "hello" toDeferredValue def1!!
-            launch {
-                delay(25)
-                def2 = CompletableDeferred()
-                "last" toDeferredValue def2!!
+            delay(25)
+            def2 = CompletableDeferred()
+            "last" toDeferredValue def2!!
 
 
-                deferredLaunch {
-                    delay(750)
-                    def3 = CompletableDeferred()
-                    "onTheFly" toDeferredValue def3!!
-                }
+            deferredLaunch {
+                delay(750)
+                def3 = CompletableDeferred()
+                "onTheFly" toDeferredValue def3!!
             }
         }
 
